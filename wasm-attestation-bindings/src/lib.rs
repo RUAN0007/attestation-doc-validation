@@ -1,9 +1,9 @@
 use attestation_doc_validation::{
-    parse_cert, validate_and_parse_attestation_doc, validate_attestation_doc_against_cert,
+    validate_and_parse_attestation_doc,
     validate_expected_pcrs, PCRProvider,
 };
-use base64::prelude::*;
 use wasm_bindgen::prelude::*;
+use anyhow::{Result, anyhow};
 
 #[wasm_bindgen]
 extern "C" {
@@ -16,181 +16,171 @@ extern "C" {
     fn error(s: &str);
 }
 
-// PCR class for mapping between JS and rust.
-#[wasm_bindgen(js_name = PCRs)]
-pub struct JsPCRs {
-    #[wasm_bindgen(getter_with_clone, js_name = hashAlgorithm)]
-    pub hash_algorithm: Option<String>,
-    #[wasm_bindgen(getter_with_clone, js_name = pcr0)]
-    pub pcr_0: Option<String>,
-    #[wasm_bindgen(getter_with_clone, js_name = pcr1)]
-    pub pcr_1: Option<String>,
-    #[wasm_bindgen(getter_with_clone, js_name = pcr2)]
-    pub pcr_2: Option<String>,
-    #[wasm_bindgen(getter_with_clone, js_name = pcr8)]
-    pub pcr_8: Option<String>,
+const LOG_NAMESPACE: &'static str = "ATTESTATION ::";
+
+#[wasm_bindgen(js_name = PCRHexes)]
+pub struct JsPCRHexes {
+    #[wasm_bindgen(getter_with_clone, js_name = pcr0_hex)]
+    pub pcr_0_hex: Option<String>,
+    #[wasm_bindgen(getter_with_clone, js_name = pcr1_hex)]
+    pub pcr_1_hex: Option<String>,
+    #[wasm_bindgen(getter_with_clone, js_name = pcr2_hex)]
+    pub pcr_2_hex: Option<String>,
+    #[wasm_bindgen(getter_with_clone, js_name = pcr8_hex)]
+    pub pcr_8_hex: Option<String>,
 }
 
-#[wasm_bindgen(js_class = PCRs)]
-impl JsPCRs {
+#[wasm_bindgen(js_name = DocParsingResult)]
+pub struct DocParsingResult {
+    #[wasm_bindgen(getter_with_clone, js_name = valid)]
+    pub valid: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = pubkey_hex)]
+    pub pubkey_hex: String,
+    #[wasm_bindgen(getter_with_clone, js_name = user_data_hex)]
+    pub user_data_hex: String,
+    #[wasm_bindgen(getter_with_clone, js_name = nonce_hex)]
+    pub nonce_hex: String,
+}
+
+
+#[wasm_bindgen(js_class = PCRHexes)]
+impl JsPCRHexes {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        pcr_0: Option<String>,
-        pcr_1: Option<String>,
-        pcr_2: Option<String>,
-        pcr_8: Option<String>,
-        hash_algorithm: Option<String>,
+        pcr_0_hex: Option<String>,
+        pcr_1_hex: Option<String>,
+        pcr_2_hex: Option<String>,
+        pcr_8_hex: Option<String>,
     ) -> Self {
       Self {
-        pcr_0,
-        pcr_1,
-        pcr_2,
-        pcr_8,
-        hash_algorithm
+        pcr_0_hex,
+        pcr_1_hex,
+        pcr_2_hex,
+        pcr_8_hex,
       }
     }
 
     /// Helper to create an empty PCR container, to support setting the PCRs explicitly
     /// ```js
-    /// const pcrs = PCRs.empty();
-    /// pcrs.pcr0 = "...";
-    /// pcrs.pcr8 = "...";
+    /// const pcrs = PCRHexes.empty();
+    /// pcrs.pcr0_hex = "...";
+    /// pcrs.pcr8_hex = "...";
     /// ```
     pub fn empty() -> Self {
       Self {
-        pcr_0: None,
-        pcr_1: None,
-        pcr_2: None,
-        pcr_8: None,
-        hash_algorithm: None
+        pcr_0_hex: None,
+        pcr_1_hex: None,
+        pcr_2_hex: None,
+        pcr_8_hex: None,
       }
     }
 }
 
-impl PCRProvider for JsPCRs {
+impl PCRProvider for JsPCRHexes {
+    // remove "0x" prefix
     fn pcr_0(&self) -> Option<&str> {
-        self.pcr_0.as_deref()
+        self.pcr_0_hex.as_deref().map(|s| {
+            if s.starts_with("0x") {
+                &s[2..]
+            } else {
+                s
+            }
+        })    
     }
 
     fn pcr_1(&self) -> Option<&str> {
-        self.pcr_1.as_deref()
+        self.pcr_1_hex.as_deref().map(|s| {
+            if s.starts_with("0x") {
+                &s[2..]
+            } else {
+                s
+            }
+        })    
     }
 
     fn pcr_2(&self) -> Option<&str> {
-        self.pcr_2.as_deref()
+        self.pcr_2_hex.as_deref().map(|s| {
+            if s.starts_with("0x") {
+                &s[2..]
+            } else {
+                s
+            }
+        })    
     }
 
     fn pcr_8(&self) -> Option<&str> {
-        self.pcr_8.as_deref()
-    }
-}
-
-const LOG_NAMESPACE: &'static str = "ATTESTATION ::";
-
-/// A client can call out to `<enclave-url>/.well-known/attestation` to fetch the attestation doc from the Enclave
-/// The fetched attestation doc will have the public key of the domain's cert embedded inside it along with an expiry
-/// Note: this is the typical attestation flow used in our server side SDK, but is unlikely to be usable in browser
-/// as there's no access to the Remote TLS Certificate. You likely need the validateAttestationDocPcrs function.
-#[wasm_bindgen(js_name = attestEnclave)]
-pub fn attest_enclave(
-    cert: Box<[u8]>,
-    expected_pcrs_list: Box<[JsPCRs]>,
-    attestation_doc: &str,
-) -> bool {
-    let parsed_cert = match parse_cert(cert.as_ref()) {
-        Ok(parsed_cert) => parsed_cert,
-        Err(e) => {
-            let error_msg = format!("{LOG_NAMESPACE} Failed to parse provided cert: {e}");
-            error(&error_msg);
-            return false;
-        }
-    };
-
-    let decoded_ad = match BASE64_STANDARD.decode(attestation_doc.as_bytes()) {
-        Ok(ad) => ad,
-        Err(e) => {
-            let error_msg = format!("{LOG_NAMESPACE} Failed to decode the provided attestation document as base64 - {e}");
-            error(&error_msg);
-            return false;
-        }
-    };
-
-    let validated_attestation_doc = match validate_attestation_doc_against_cert(
-        &parsed_cert,
-        decoded_ad.as_ref(),
-    ) {
-        Ok(attestation_doc) => attestation_doc,
-        Err(e) => {
-            let error_msg = format!("{LOG_NAMESPACE} An error occur while validating the attestation doc against the Enclave connection's cert: {e}");
-            error(&error_msg);
-            return false;
-        }
-    };
-
-    let mut observed_error = None;
-    for expected_pcrs in expected_pcrs_list.as_ref() {
-        match validate_expected_pcrs(&validated_attestation_doc, expected_pcrs) {
-            Ok(_) => return true,
-            Err(err) => {
-                observed_error = Some(err);
+        self.pcr_8_hex.as_deref().map(|s| {
+            if s.starts_with("0x") {
+                &s[2..]
+            } else {
+                s
             }
-        }
-    }
-
-    match observed_error {
-        None => true,
-        Some(e) => {
-            let error_msg =
-                format!("{LOG_NAMESPACE} Failed to validate that PCRs are as expected: {e}");
-            error(&error_msg);
-            false
-        }
+        })    
     }
 }
 
-/// A client can call out to `<enclave-url>/.well-known/attestation` to fetch the attestation doc from the Enclave
-/// The fetched attestation doc will have the public key of the domain's cert embedded inside it along with an expiry
-#[wasm_bindgen(js_name = validateAttestationDocPcrs)]
-pub fn validate_attestation_doc_pcrs(
-    attestation_doc: &str,
-    expected_pcrs_list: Box<[JsPCRs]>,
-) -> bool {
+fn hex_encode(data : &[u8]) -> String {
+	format!("0x{}", hex::encode(data))
+}
+
+fn hex_decode(data: &str) -> Result<Vec<u8>>  {
+    if data.starts_with("0x") {
+        return Ok(hex::decode(&data[2..])?);
+    }
+    Err(anyhow!("Invalid hex string, not prefixed with '0x'"))
+}
+
+
+#[wasm_bindgen(js_name = parseAndValidateAttestationDoc)]
+pub fn parse_validate_attestation_doc_pcrs(
+    attestation_doc_hex: &str,
+    expected_pcrs: JsPCRHexes,
+) -> DocParsingResult {
     console_error_panic_hook::set_once();
-    let decoded_ad = match BASE64_STANDARD.decode(attestation_doc.as_bytes()) {
+    let mut res = DocParsingResult {
+        valid: false,
+        pubkey_hex: "".to_owned(),
+        user_data_hex: "".to_owned(),
+        nonce_hex: "".to_owned(),
+    };
+    let decoded_ad = match hex_decode(attestation_doc_hex) {
         Ok(ad) => ad,
         Err(e) => {
-            let error_msg = format!("{LOG_NAMESPACE} Failed to decode the provided attestation document as base64 - {e}");
+            let error_msg = format!("{LOG_NAMESPACE} Failed to decode the provided attestation document as hex - {e}");
             error(&error_msg);
-            return false;
+            return res;
         }
     };
 
-    let validated_attestation_doc = match validate_and_parse_attestation_doc(decoded_ad.as_ref()) {
+    let validated_attestation_doc = match validate_and_parse_attestation_doc(&decoded_ad) {
         Ok(attestation_doc) => attestation_doc,
         Err(e) => {
             let error_msg = format!("{LOG_NAMESPACE} An error occur while validating the attestation doc against the Enclave connection's cert: {e}");
             error(&error_msg);
-            return false;
+
+            return res;
         }
     };
 
-    let mut observed_error = None;
-    for expected_pcrs in expected_pcrs_list.as_ref() {
-        match validate_expected_pcrs(&validated_attestation_doc, expected_pcrs) {
-            Ok(_) => return true,
-            Err(err) => {
-                observed_error = Some(err);
-            }
-        }
-    }
 
-    match observed_error {
-        None => true,
-        Some(e) => {
-            let error_msg =
-                format!("{LOG_NAMESPACE} Failed to validate that PCRs are as expected: {e}");
+    match validate_expected_pcrs(&validated_attestation_doc, &expected_pcrs) {
+        Ok(_) => {
+            res.valid = true;
+            if let Some(pub_key) = validated_attestation_doc.public_key {
+                res.pubkey_hex = hex_encode(&pub_key.to_vec());
+            }
+            if let Some(user_data) = validated_attestation_doc.user_data {
+                res.user_data_hex = hex_encode(&user_data.to_vec());
+            }
+            if let Some(nonce) = validated_attestation_doc.nonce {
+                res.nonce_hex = hex_encode(&nonce.to_vec());
+            }
+            return res;
+        }
+        Err(e) => {
+            let error_msg = format!("{LOG_NAMESPACE} An error occur while comparing the pcrs: {e}");
             error(&error_msg);
-            false
+            return res;
         }
     }
 }
