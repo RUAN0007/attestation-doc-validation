@@ -77,8 +77,14 @@ This will:
 It's not possible to compile the wasm bindings on Mac using the version of Clang shipped in MacOS. 
 One approach to get around this is to install LLVM from homebrew, and set it as your C-Compiler using the `TARGET_CC` env var:
 
+For release target
 ```sh
 TARGET_CC="/opt/homebrew/opt/llvm/bin/clang" wasm-pack build ./wasm-attestation-bindings -s evervault --out-name index --release --target=web
+```
+
+For debug target
+```sh
+TARGET_CC="/opt/homebrew/opt/llvm/bin/clang" wasm-pack build ./wasm-attestation-bindings -s evervault --out-name index --dev --target=web
 ```
 
 ### A Note on Attesting from Web Browsers

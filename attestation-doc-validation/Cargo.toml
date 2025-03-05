@@ -20,7 +20,7 @@ serde_cbor = "0.11"
 hex = "0.4.3"
 base64 = "0.21"
 serde_bytes = "0.11"
-serde = { version = "1.0.180", features = ["derive"] }
+serde = { version = "1.0.184", features = ["derive"] }
 serde_with = "2.2"
 webpki = { version = "0.22", features = ["alloc"] }
 x509-parser = "0.14.0"
@@ -39,7 +39,7 @@ aws-nitro-enclaves-nsm-api = { version = "^0.4", default-features = false }
 # Override indirect dependency of rand to force getrandom to have wasm support
 getrandom = { version = "0.2", features = ["js"] }
 # Add wasm support to time
-time = { version = "0.3", features = ["wasm-bindgen"] }
+time = { version = "0.3.36", features = ["wasm-bindgen"] }
 # Include wasm bindings to create a time-shim module
 wasm-bindgen = { version = "0.2.99" }
 
