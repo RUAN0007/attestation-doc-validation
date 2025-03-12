@@ -1,7 +1,7 @@
 [workspace]
 members = [
   "attestation-doc-validation",
-  "wasm-attestation-bindings"
+  "wasm-sdk-bindings"
 ]
 
 [profile.release]

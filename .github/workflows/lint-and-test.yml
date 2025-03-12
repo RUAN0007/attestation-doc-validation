@@ -38,7 +38,7 @@ jobs:
       - name: Install wasmpack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build wasm bindings with wasm-pack
-        run: wasm-pack build ./wasm-attestation-bindings -s evervault --out-name index
+        run: wasm-pack build ./wasm-sdk-bindings -s evervault --out-name index
         env:
           RUST_BACKTRACE: full
   lint_and_test_node:
