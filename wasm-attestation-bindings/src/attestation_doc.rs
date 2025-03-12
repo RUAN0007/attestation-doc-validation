@@ -26,7 +26,7 @@ fn error(s: &str) {
 }
 const LOG_NAMESPACE: &'static str = "ATTESTATION ::";
 
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = PCRHexes))]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = JsPCRHexes))]
 pub struct JsPCRHexes {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter_with_clone, js_name = pcr0_hex))]
     pub pcr_0_hex: Option<String>,
@@ -71,7 +71,7 @@ impl JsPCRHexes {
 
     /// Helper to create an empty PCR container, to support setting the PCRs explicitly
     /// ```js
-    /// const pcrs = PCRHexes.empty();
+    /// const pcrs = JsPCRHexes.empty();
     /// pcrs.pcr0_hex = "...";
     /// pcrs.pcr8_hex = "...";
     /// ```
