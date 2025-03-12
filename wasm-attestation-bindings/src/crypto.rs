@@ -1,5 +1,4 @@
 use pkcs1::{DecodeRsaPrivateKey, DecodeRsaPublicKey, EncodeRsaPrivateKey};
-use sha2::Digest;
 use rsa::pkcs1::EncodeRsaPublicKey;
 use rsa::{RsaPrivateKey, RsaPublicKey, Pkcs1v15Encrypt};
 use rand::rngs::OsRng;
@@ -34,11 +33,11 @@ pub fn new_ed25519_keypair() -> Ed25519KeyPair {
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = ed25519_sign))]
 // return empty str if failed.
-pub fn ed25519_sign(data_hex: String, sk_hex: String) -> String {
-    let data = match hex_decode(&data_hex) {
-        Ok(data) => data,
+pub fn ed25519_sign(msg_hex: String, sk_hex: String) -> String {
+    let msg = match hex_decode(&msg_hex) {
+        Ok(msg) => msg,
         Err(e) => {
-            error(format!("fail to hex-decode data {} due to error {}", data_hex, e).as_str());
+            error(format!("fail to hex-decode data {} due to error {}", msg_hex, e).as_str());
             return "".to_owned();
         }
     };
@@ -61,10 +60,7 @@ pub fn ed25519_sign(data_hex: String, sk_hex: String) -> String {
 
     let sk = match ed25519_dalek::SigningKey::try_from(&sk) {
         Ok(sk) => {
-			let mut hasher = sha2::Sha256::new(); // Create a Sha256 hasher
-			hasher.update(data); // Feed the data into the hasher
-			let result = hasher.finalize(); // Retrieve the hash result
-			let signature = sk.sign(&result);
+			let signature = sk.sign(&msg);
             signature.to_bytes()
         }
         Err(e) => {
@@ -77,9 +73,9 @@ pub fn ed25519_sign(data_hex: String, sk_hex: String) -> String {
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = ed25519_verify))]
-pub fn ed25519_verify(signature_hex: String, data_hex: String, pk_hex: String) -> bool {
-	let data = match hex_decode(&data_hex) {
-		Ok(data_hex) => data_hex,
+pub fn ed25519_verify(signature_hex: String, msg_hex: String, pk_hex: String) -> bool {
+	let msg = match hex_decode(&msg_hex) {
+		Ok(msg) => msg,
 		Err(e) => {
 			error(format!("fail to hex-decode {} due to error {}", signature_hex, e).as_str());
 			return false;
@@ -128,11 +124,7 @@ pub fn ed25519_verify(signature_hex: String, data_hex: String, pk_hex: String) -
         }
     };
 
-	let mut hasher = sha2::Sha256::new(); // Create a Sha256 hasher
-    hasher.update(data); // Feed the data into the hasher
-    let data_hash = hasher.finalize(); // Retrieve the hash result
-
-    let result = match pk.verify(&data_hash, &sig){
+    let result = match pk.verify(&msg, &sig){
 		Ok(_) => true,
 		Err(e) => {
 			error(format!("fail to verify signature due to error {}", e).as_str());
@@ -318,24 +310,18 @@ mod tests {
         println!("ed25519 sig: {}", sig);
         assert!(super::ed25519_verify(sig.clone(), msg, kp.pk.clone()));
 
-        // ed25519 pub_key: 0x69831fba0940d56c127cb5679e09209bea355dce4c603880f2d44d217787b8e2
-        // ed25519 sk_key: 0x66bd57e6b172c2314c56a10c33f43f598007b5aa0479b9cadf192920d7241d76
-        // ed25519 msg: 0x1234abcd
-        // ed25519 sig: 0x987bd6268fae7f85b4cb0306ad5f60e38b4347fcee1a5c0d2ffcd6505a067df2f020dd8ed59fb75fa0cb8e344fe984eaef90816e3db1ae7bd136701fd0c98801
-
-        assert!(!super::ed25519_verify(
-            sig.clone(),
-            "0x1234".to_owned(),
-            kp.pk
-        ));
+		// ed25519 pub_key: 0xb7ce60a8da0fa85030cbca3e4f862d363a5b02095e5f91c1edcf0d81b7adb702
+		// ed25519 sk_key: 0x2ec9dd53043ab33ab602f954cdc0b180df3c18c7406c78f81127f9497fdb78c5
+		// ed25519 msg: 0x1234abcd
+		// ed25519 sig: 0x7a6543e5d6a6cf492ef82530a0996e94fe67c1fff10cbfa02fd16c63c9c197f96d1c50f027995ce2efe5ed6f4081c0ea49037f585b2454b77e2c4f033f6c4e00
     }
 
     #[test]
     fn test_ed25519_from_given_keypair() {
-        let sk = "0x9070f593b049f39f00076f65a3fd5507a107bbb6849d286d61683e975973e39a".to_owned();
-        let pk = "0xa986d5e0d7a6d9fc0ca9070bd69be9e3f5ed0bef3436bf00396a18e5f6f47570".to_owned();
+        let sk = "0xe96b2d1ace52a7260cd8ea2dc848ffcbfbe696e525e191b665cad4a7f2bfb7d6".to_owned();
+        let pk = "0xabf2b9f541120c65a461c5e69051720d40b8f2269ea7b4253eb427ec4d588ecc".to_owned();
         let msg = "0x1234abcd".to_owned();
-        let expected_sig = "0x3cea13ed72b73a19ede716a20222ece86ec0a8cac278e24a6a28cd8a9dd61c4f94aa40d25b25d8f6d452df9411a41607331142d925d390c98113db7bbeac0101".to_owned();
+        let expected_sig = "0xfedbe9734dced4be853d26a4f9b0cf60ffbc9946291a1642721b5fccaabd29614e6d41ba92c9e25e50cf07fe94d0ca9a8d3c608ab9fff5a94bc7cb282777d901".to_owned();
 
         println!("ed25519 msg: {}", msg);
         let sig = super::ed25519_sign(msg.clone(), sk.clone());

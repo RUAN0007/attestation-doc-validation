@@ -1441,7 +1441,6 @@ dependencies = [
  "pkcs1",
  "rand",
  "rsa",
- "sha2",
  "wasm-bindgen",
 ]
 
