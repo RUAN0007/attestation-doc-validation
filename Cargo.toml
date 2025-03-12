@@ -1,9 +1,6 @@
 [workspace]
 members = [
   "attestation-doc-validation",
-  "python-attestation-bindings",
-  "node-attestation-bindings",
-  "swift-attestation-bindings",
   "wasm-attestation-bindings"
 ]
 

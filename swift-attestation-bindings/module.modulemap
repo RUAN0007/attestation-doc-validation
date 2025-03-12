@@ -1,6 +1,0 @@
-framework module AttestationBindings {
-  umbrella header "AttestationBindings.h"
-
-  export *
-  module * { export * }
-}
